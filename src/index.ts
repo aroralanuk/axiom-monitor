@@ -1,12 +1,7 @@
 import createEthereum from "./ethereum";
-import {Store, MangoStore} from './mongo';
+import { Mongo } from './mongo/index';
 const AxiomV0ABI = require("../abi/AxiomV0.json");
 import { logger } from './utils/logger';
-
-export const stores = {
-    mongo: MangoStore,
-}
-
 
 
 interface SyncOptions {
@@ -18,28 +13,27 @@ interface SyncOptions {
 
 
 
-export function AxiomMonitor(
-    store: Store,
+export async function AxiomMonitor(
+    db,
     rpcProviderUrl: string,
 ) {
-    console.log("hello worl");
+    console.log("hello!");
     const axiomContract: string = "0x01d5b501C1fc0121e1411970fb79c322737025c2";
+
+    await db.init();
+
     const ethereum = createEthereum(
       AxiomV0ABI,
       axiomContract,
       rpcProviderUrl
     );
-    // ethereum.contract.on("UpdateEvent", (startBlockNumber, prevHash, root, numFinal) => {
-    //     console.log("UpdateEvent", startBlockNumber, prevHash, root, numFinal);
-    // });
 
-    async function syncHistory({ fromBlockNum, toBlockNum, querySize = 10000 }: SyncOptions) {
-      const db = await store.init();
+    async function sync({ fromBlockNum, toBlockNum, querySize = 10000 }: SyncOptions) {
         let endQueryBlock = toBlockNum || await ethereum.currentBlockNum();
 
         // backfilling backwards from current or specified block
         while (fromBlockNum < endQueryBlock) {
-
+            console.log("while loop");
             if (fromBlockNum + querySize > endQueryBlock) {
                 logger.info(
                     `Syncing contract ${axiomContract} from block ${fromBlockNum} to ${endQueryBlock}`
@@ -50,7 +44,7 @@ export function AxiomMonitor(
                 const result = await ethereum.getPastEvents(blockRange);
                 if (result.length > 0) {
                     logger.info(`Found ${result.length} events`);
-                    // await this.store.put(result);
+                    await db.put(result);
                 }
             } else {
                 logger.info(
@@ -68,37 +62,39 @@ export function AxiomMonitor(
             endQueryBlock -= querySize;
         }
 
+        logger.info(`Old syncing contract ${axiomContract} complete`);
+
+        // live syncing
+        ethereum.getLiveEvents();
 
     }
 
-    async function syncHistoryTest() {
-        const fromBlockNum =( await ethereum.currentBlockNum()) - 7000;
-        await syncHistory({ fromBlockNum });
+    async function syncTest() {
+        const fromBlockNum =( await ethereum.currentBlockNum()) - 500;
+        await sync({ fromBlockNum });
     }
-
-    //  async function liveSync()
-
-    // check if no recent update in the last 192 blocks
-
-    //
 
     return {
-        store,
+        db,
         ethereum,
-        syncHistory,
-        syncHistoryTest,
+        sync,
+        syncTest,
     }
 }
 
 export default AxiomMonitor;
 
-
 // just for testing
-const store = stores.mongo;
-store.init();
-const axiomMonitor = AxiomMonitor(store, 'https://mainnet.infura.io/v3/26423ae5f7f645398aa0f783e7ced5a6');
+async function main() {
+    const db = await Mongo();
+    const axiomMonitor = await AxiomMonitor(db, 'https://mainnet.infura.io/v3/26423ae5f7f645398aa0f783e7ced5a6');
 
-axiomMonitor.syncHistoryTest();
+    axiomMonitor.syncTest();
+}
+
+main();
+
+
 
 
 

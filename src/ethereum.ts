@@ -1,7 +1,6 @@
 import { Contract, ContractEventName, EventFilter, EventLog } from 'ethers';
 import { ethers } from 'ethers';
-// import abiDecoder from 'abi-decoder';
-// import logger from './logger.js';
+import { UpdateEvent, Status } from './updateEvents';
 
 interface BlockRange {
   start: number;
@@ -26,6 +25,31 @@ const createEthereum = (abi: any[], contractAddress: string, rpcProviderUrl: str
         return result;
     }
 
+    let lastUpdateEventBlock: number | null = null;
+
+    async function getLiveEvents() {
+        const currentBlockNumber = await currentBlockNum();
+        contract.on(eventName, (startBlockNumber, prevHash, root, numFinal, event) => {
+            const eventData: UpdateEvent = {
+                txHash: event.transactionHash,
+                blockIncluded: event.blockNumber,
+                status: Status.ONTIME,
+                startBlockNumber,
+                prevHash,
+                root,
+                numFinal,
+            };
+            console.log('New event received:', eventData);
+
+            lastUpdateEventBlock = event.blockNumber;
+
+            // Set a new timeout to trigger an alert if no new UpdateEvent is received within 192 blocks
+            if (currentBlockNumber - lastUpdateEventBlock! >= 192) {
+                console.log('ALERT: No UpdateEvent received within the last 192 blocks');
+            }
+        });
+    }
+
     // get current block number
     async function currentBlockNum() {
         return await rpcProvider.getBlockNumber();
@@ -34,10 +58,11 @@ const createEthereum = (abi: any[], contractAddress: string, rpcProviderUrl: str
 
   // Other functions
 
-  return {
-    contract,
-      getPastEvents,
+    return {
+        contract,
+        getPastEvents,
         currentBlockNum,
+        getLiveEvents,
   };
 };
 
